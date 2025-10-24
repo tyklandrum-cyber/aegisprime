@@ -408,7 +408,7 @@
         // --- Dev Portal Constant ---
         const DEV_ACCESS_CODE = "8888";
 
-        // --- UI Element References (REDACTED FOR BREVITY, same as previous version) ---
+        // --- UI Element References ---
         const authView = document.getElementById('auth-view');
         const mainDashboardView = document.getElementById('main-dashboard-view');
         const devPortalView = document.getElementById('dev-portal-view');
@@ -448,43 +448,58 @@
         const tabButtons = document.querySelectorAll('.tab-button');
 
 
-        // --- Initialization and Authentication ---
+        // --- Initialization and Authentication Refactored for Stability ---
         if (Object.keys(firebaseConfig).length > 0) {
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
+            
+            console.log("AEGIS PRIME: Firebase initialized. Checking authentication state...");
 
+            // 1. Define the user state change handler
             onAuthStateChanged(auth, (user) => {
                 if (user) {
                     userId = user.uid;
                     currentUserIdDisplay.textContent = userId;
+                    console.log(`AEGIS PRIME: Access granted. User ID: ${userId}`);
+                    
                     // Only show dashboard if NOT in dev portal view
                     if(devPortalView.classList.contains('hidden')) {
                         showView('main-dashboard-view');
                     }
+                    
+                    // Set up listeners ONLY after auth is confirmed and userId is set
                     listenForMessages('general');
                     listenForMessages('hacking');
+                    
                     document.getElementById('send-button-general').disabled = false;
                     document.getElementById('send-button-hacking-btn').disabled = false;
                     document.getElementById('dev-app-id').textContent = appId;
 
-
                 } else {
-                    if (initialAuthToken) {
-                         signInWithCustomToken(auth, initialAuthToken)
-                            .catch(error => { showView('auth-view'); });
-                    } else {
-                        signInAnonymously(auth)
-                            .then(() => {
-                                // If anonymous sign-in succeeds, it will trigger the 'if (user)' block above.
-                            })
-                            .catch(error => { showView('auth-view'); });
-                    }
-                    showView('auth-view'); 
+                    // Show auth view if no user is authenticated (after initial attempts)
+                    console.log("AEGIS PRIME: No active session found. Awaiting authentication.");
+                    showView('auth-view');
                 }
             });
+            
+            // 2. Initiate the first sign-in attempt (outside the listener) to trigger state change
+            if (initialAuthToken) {
+                 signInWithCustomToken(auth, initialAuthToken)
+                    .catch(error => { 
+                        console.warn("AEGIS PRIME: Custom token failed. Falling back to anonymous sign-in.");
+                        // Fall back to anonymous sign-in if custom token fails
+                        signInAnonymously(auth)
+                            .catch(anonError => { console.error("AEGIS PRIME: Anonymous sign-in failed.", anonError); });
+                    });
+            } else {
+                // If no custom token is provided, attempt anonymous sign-in immediately
+                signInAnonymously(auth)
+                    .catch(anonError => { console.error("AEGIS PRIME: Anonymous sign-in failed.", anonError); });
+            }
+
         } else {
-            console.error("Firebase config not available. Features disabled.");
+            console.error("AEGIS PRIME: FATAL ERROR: Firebase Configuration Missing.");
             authMessage.textContent = "FATAL ERROR: Firebase Configuration Missing. Check script config.";
             showView('auth-view'); 
         }
@@ -609,7 +624,10 @@
         }
 
         function listenForMessages(type) {
-            if (!userId) return;
+            if (!userId) {
+                console.error(`Cannot establish listener for ${type} chat: userId is null.`);
+                return;
+            }
 
             const q = query(getChatCollectionRef(type), orderBy("timestamp", "asc"));
             const historyElement = type === 'general' ? chatHistoryGeneral : chatHistoryHacking;
@@ -639,7 +657,7 @@
                 historyElement.scrollTop = historyElement.scrollHeight;
             }, (error) => {
                 console.error(`Error listening to ${type} chat history:`, error);
-                historyElement.innerHTML = '<p class="text-center text-red-500">COMMS FAILURE: Failed to load chat history.</p>';
+                historyElement.innerHTML = '<p class="text-center text-red-500">COMMS FAILURE: Failed to load chat history. Check console for 404/permission errors.</p>';
             });
         }
 
@@ -873,7 +891,7 @@
             }
             
             // Validation for CIDR notation X.X.X.X/YY
-            const cidrMatch = subnet.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.)0\/24$/);
+            const cidrMatch = subnet.match(/^(\d{1,3}\.\d{1,3}\.\d{1:3}\.)0\/24$/);
             if (!cidrMatch) {
                 scanOutput.textContent = "// ERROR: Invalid CIDR format detected.\n// REQUIREMENT: Must specify a full /24 network range (e.g., 192.168.1.0/24).";
                 return;
